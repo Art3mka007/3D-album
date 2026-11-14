@@ -17,7 +17,7 @@ export default defineConfig(() => {
           id: '/',
           name: '3D-Альбом',
           short_name: '3D-Альбом',
-          description: 'Личная коллекция памятных вещей в 3D и VR',
+          description: 'Интерактивная 2.5D-витрина для личной коллекции памятных вещей',
           theme_color: '#FAF8F5',
           background_color: '#FAF8F5',
           display: 'standalone',

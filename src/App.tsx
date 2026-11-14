@@ -7,28 +7,60 @@ import { useEffect, useMemo, useState } from 'react';
 import { CaptureScreen } from './components/CaptureScreen';
 import { GalleryScreen } from './components/GalleryScreen';
 import { OfflineIndicator } from './components/OfflineIndicator';
-import { ProcessingScreen } from './components/ProcessingScreen';
+import { SaveScreen } from './components/SaveScreen';
 import { ViewerScreen } from './components/ViewerScreen';
-import type { AlbumItem, AppScreen, CapturedDraft } from './types/album';
+import type { AlbumItem, AppScreen, CapturedDraft, CapturedViewFrame } from './types/album';
 import {
+  SEED_TEMPLATES,
   createAlbumItem,
   deleteAlbumItem,
   filterAlbumItems,
-  loadAlbumItems,
-  saveAlbumItems,
 } from './utils/albumStorage';
+import { dbDeleteItem, dbGetAllItems, dbPutItem, dbPutManyItems } from './utils/db';
+import { generateSeedItemViews } from './utils/demoStudio';
 
 export default function App() {
-  const [items, setItems] = useState<AlbumItem[]>(() => loadAlbumItems());
+  const [items, setItems] = useState<AlbumItem[]>([]);
+  const [isLoaded, setIsLoaded] = useState(false);
   const [screen, setScreen] = useState<AppScreen>('gallery');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [streamPromise, setStreamPromise] = useState<Promise<MediaStream> | null>(null);
   const [draft, setDraft] = useState<CapturedDraft | null>(null);
 
+  // Load items from IndexedDB; seed 3 demo items with 9 crisp studio views if empty
   useEffect(() => {
-    saveAlbumItems(items);
-  }, [items]);
+    let cancelled = false;
+
+    async function initDb() {
+      const existing = await dbGetAllItems();
+      if (cancelled) return;
+
+      if (existing.length > 0) {
+        setItems(existing);
+        setIsLoaded(true);
+        return;
+      }
+
+      const seeded: AlbumItem[] = SEED_TEMPLATES.map((tpl) => {
+        const views = generateSeedItemViews(tpl.id);
+        return {
+          ...tpl,
+          coverUrl: views[0]?.dataUrl ?? '',
+          views,
+        };
+      });
+      await dbPutManyItems(seeded);
+      if (cancelled) return;
+      setItems(seeded);
+      setIsLoaded(true);
+    }
+
+    initDb();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const filteredItems = useMemo(
     () => filterAlbumItems(items, searchQuery),
@@ -48,7 +80,7 @@ export default function App() {
       typeof navigator.mediaDevices.getUserMedia === 'function'
     ) {
       const promise = navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment' },
+        video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } },
         audio: false,
       });
       setStreamPromise(promise);
@@ -61,12 +93,13 @@ export default function App() {
   const handleCaptureComplete = (captured: CapturedDraft) => {
     setDraft(captured);
     setStreamPromise(null);
-    setScreen('processing');
+    setScreen('save');
   };
 
-  const handleSaveItem = (form: {
+  const handleSaveItem = async (form: {
     title: string;
     note: string;
+    views: CapturedViewFrame[];
     coverUrl: string;
     accentHex: string;
   }) => {
@@ -74,22 +107,31 @@ export default function App() {
     const newItem = createAlbumItem({
       title: form.title,
       note: form.note,
+      views: form.views,
       coverUrl: form.coverUrl,
       source: draft.source,
-      modelType: 'custom',
-      frames: draft.frames,
       accentHex: form.accentHex,
     });
     setItems((prev) => [newItem, ...prev]);
+    await dbPutItem(newItem);
     setDraft(null);
     setScreen('gallery');
   };
 
-  const handleDeleteItem = (id: string) => {
+  const handleDeleteItem = async (id: string) => {
     setItems((prev) => deleteAlbumItem(prev, id));
+    await dbDeleteItem(id);
     setSelectedItemId(null);
     setScreen('gallery');
   };
+
+  if (!isLoaded) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#FAF8F5] text-sm text-[#6E645B]">
+        Загрузка коллекции...
+      </div>
+    );
+  }
 
   return (
     <>
@@ -118,8 +160,8 @@ export default function App() {
         />
       )}
 
-      {screen === 'processing' && draft && (
-        <ProcessingScreen
+      {screen === 'save' && draft && (
+        <SaveScreen
           draft={draft}
           onBack={() => {
             setDraft(null);

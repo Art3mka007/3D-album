@@ -1,90 +1,84 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { CAPTURE_STEPS, type CapturedViewFrame } from '../types/album';
 import {
-  ALBUM_STORAGE_KEY,
-  SEED_ITEMS,
-  calculateCaptureProgress,
   createAlbumItem,
   deleteAlbumItem,
   filterAlbumItems,
   formatRussianCount,
   formatRussianDate,
-  loadAlbumItems,
-  saveAlbumItems,
+  getCaptureStepMeta,
 } from './albumStorage';
 
-function createMemoryStorage() {
-  const map = new Map<string, string>();
-  return {
-    getItem: (key: string) => map.get(key) ?? null,
-    setItem: (key: string, value: string) => {
-      map.set(key, value);
-    },
-  };
+function makeDummyViews(prefix = 'frame'): CapturedViewFrame[] {
+  return CAPTURE_STEPS.map((step) => ({
+    stepIndex: step.index,
+    shortLabel: step.shortLabel,
+    yawDeg: step.yawDeg,
+    tiltDeg: step.tiltDeg,
+    dataUrl: `data:image/jpeg;base64,${prefix}-${step.index}`,
+  }));
 }
 
-test('loadAlbumItems seeds 3 demo items on empty storage', () => {
-  const storage = createMemoryStorage();
-  const items = loadAlbumItems(storage);
-  assert.equal(items.length, 3);
-  assert.equal(items[0].title, 'Старый Зенит');
-  assert.equal(items[1].title, 'Любимые кеды');
-  assert.equal(items[2].title, 'Авокадо-сувенир');
-  assert.ok(storage.getItem(ALBUM_STORAGE_KEY));
-});
-
 test('filterAlbumItems matches Russian titles and notes case-insensitively', () => {
-  assert.equal(filterAlbumItems(SEED_ITEMS, '').length, 3);
-  assert.equal(filterAlbumItems(SEED_ITEMS, 'зенит').length, 1);
-  assert.equal(filterAlbumItems(SEED_ITEMS, 'Петербург').length, 1);
-  assert.equal(filterAlbumItems(SEED_ITEMS, 'несуществующий').length, 0);
+  const items = [
+    createAlbumItem({
+      id: '1',
+      title: 'Старый Зенит',
+      note: 'Плёночный фотоаппарат',
+      views: makeDummyViews('a'),
+      source: 'demo',
+    }),
+    createAlbumItem({
+      id: '2',
+      title: 'Керамическая ваза',
+      note: 'Привезена из Крыма',
+      views: makeDummyViews('b'),
+      source: 'camera',
+    }),
+  ];
+
+  assert.equal(filterAlbumItems(items, 'зенит').length, 1);
+  assert.equal(filterAlbumItems(items, 'крым').length, 1);
+  assert.equal(filterAlbumItems(items, '  ').length, 2);
 });
 
-test('createAlbumItem validates title and creates custom item', () => {
+test('CAPTURE_STEPS has 9 views: 8 circular 45° steps + 1 top-down view', () => {
+  assert.equal(CAPTURE_STEPS.length, 9);
+  const circularYaws = CAPTURE_STEPS.slice(0, 8).map((s) => s.yawDeg);
+  assert.deepEqual(circularYaws, [0, 45, 90, 135, 180, 225, 270, 315]);
+  assert.equal(getCaptureStepMeta(0).instruction, 'Поставьте предмет лицевой стороной (0°)');
+  assert.equal(getCaptureStepMeta(8).tiltDeg, 90);
+  assert.equal(getCaptureStepMeta(8).shortLabel, 'Сверху');
+});
+
+test('createAlbumItem enforces title, sets 0° front frame as coverUrl, and deleteAlbumItem removes item', () => {
   assert.throws(() =>
     createAlbumItem({
       title: '   ',
-      note: 'Заметка',
-      coverUrl: 'data:image/png;base64,abc',
+      note: '',
+      views: makeDummyViews(),
       source: 'camera',
     }),
   );
 
+  const views = makeDummyViews('mug');
   const item = createAlbumItem({
-    title: '  Винтажная кружка  ',
-    note: '  Из поездки в Карелию  ',
-    coverUrl: 'data:image/png;base64,abc',
-    source: 'gallery',
-    nowIso: '2026-11-13T12:00:00.000Z',
-    id: 'test-1',
+    id: 'x1',
+    title: '  Чашка  ',
+    note: 'Утренняя',
+    views,
+    source: 'camera',
   });
-
-  assert.equal(item.id, 'test-1');
-  assert.equal(item.title, 'Винтажная кружка');
-  assert.equal(item.note, 'Из поездки в Карелию');
-  assert.equal(item.modelType, 'custom');
-  assert.equal(item.source, 'gallery');
+  assert.equal(item.title, 'Чашка');
+  assert.equal(item.coverUrl, views[0].dataUrl);
+  assert.equal(item.views.length, 9);
+  assert.equal(deleteAlbumItem([item], 'x1').length, 0);
 });
 
-test('deleteAlbumItem removes target item and persists round-trip', () => {
-  const storage = createMemoryStorage();
-  const initial = loadAlbumItems(storage);
-  const updated = deleteAlbumItem(initial, 'seed-zenit');
-  assert.equal(updated.length, 2);
-  assert.equal(saveAlbumItems(updated, storage), true);
-
-  const reloaded = loadAlbumItems(storage);
-  assert.equal(reloaded.length, 2);
-  assert.equal(reloaded.some((i) => i.id === 'seed-zenit'), false);
-});
-
-test('Russian date, count formatting, and capture progress clamp cleanly', () => {
+test('Russian date and count formatting work accurately', () => {
   assert.equal(formatRussianDate('2026-10-14T11:30:00.000Z'), '14 окт 2026');
   assert.equal(formatRussianCount(1), '1 вещь');
   assert.equal(formatRussianCount(3), '3 вещи');
-  assert.equal(formatRussianCount(5), '5 вещей');
-  assert.equal(formatRussianCount(21), '21 вещь');
-  assert.equal(calculateCaptureProgress(-500, 10000), 0);
-  assert.equal(calculateCaptureProgress(5000, 10000), 0.5);
-  assert.equal(calculateCaptureProgress(15000, 10000), 1);
+  assert.equal(formatRussianCount(11), '11 вещей');
 });

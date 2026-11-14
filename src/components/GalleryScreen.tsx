@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box, Plus, Search, X } from 'lucide-react';
+import { Layers, Plus, Search, X } from 'lucide-react';
 import type { AlbumItem } from '../types/album';
 import { formatRussianCount, formatRussianDate } from '../utils/albumStorage';
 import { resolveCoverUrl } from '../utils/demoCovers';
@@ -75,7 +75,7 @@ export const GalleryScreen: React.FC<GalleryScreenProps> = ({
         {items.length === 0 ? (
           <div className="mt-8 rounded-2xl bg-white p-8 text-center shadow-[0_4px_20px_rgba(35,30,26,0.05)]">
             <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-[#FAF8F5] text-[#D96B43]">
-              <Box className="h-6 w-6" aria-hidden="true" />
+              <Layers className="h-6 w-6" aria-hidden="true" />
             </div>
             <h2 className="mt-4 text-lg font-semibold text-[#231E1A]">
               {hasSearch ? 'Ничего не найдено' : 'Альбом пока пуст'}
@@ -83,7 +83,7 @@ export const GalleryScreen: React.FC<GalleryScreenProps> = ({
             <p className="mt-1.5 text-sm text-[#6E645B]">
               {hasSearch
                 ? 'Попробуйте изменить запрос или сбросить поиск.'
-                : 'Нажмите кнопку «+» внизу экрана, чтобы оцифровать первую вещь.'}
+                : 'Нажмите кнопку «+» внизу экрана, чтобы снять первую вещь.'}
             </p>
             {hasSearch ? (
               <button
@@ -109,7 +109,9 @@ export const GalleryScreen: React.FC<GalleryScreenProps> = ({
             data-testid="album-grid"
           >
             {items.map((item) => {
-              const coverSrc = resolveCoverUrl(item.coverUrl);
+              // Gallery card cover strictly displays the 0° (front) view frame
+              const frontUrl = item.views?.[0]?.dataUrl || item.coverUrl;
+              const coverSrc = resolveCoverUrl(frontUrl);
               return (
                 <button
                   key={item.id}
@@ -117,23 +119,26 @@ export const GalleryScreen: React.FC<GalleryScreenProps> = ({
                   onClick={() => onSelectItem(item)}
                   className="group flex flex-col overflow-hidden rounded-2xl bg-white text-left shadow-[0_4px_18px_rgba(35,30,26,0.06)] transition-transform duration-200 hover:-translate-y-0.5 active:scale-[0.99] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#D96B43]"
                 >
-                  <div className="relative aspect-[4/3] w-full overflow-hidden bg-[#EFE8DE]">
+                  <div className="relative flex aspect-[4/3] w-full items-center justify-center overflow-hidden bg-gradient-to-b from-[#F5EFE6] to-[#EAE0D2]">
                     {coverSrc ? (
-                      <img
-                        src={coverSrc}
-                        alt={item.title}
-                        loading="lazy"
-                        referrerPolicy="no-referrer"
-                        className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
-                      />
+                      <>
+                        <div
+                          aria-hidden="true"
+                          className="pointer-events-none absolute bottom-4 h-3.5 w-36 rounded-full bg-[#231E1A]/14 blur-sm"
+                        />
+                        <img
+                          src={coverSrc}
+                          alt={item.title}
+                          loading="lazy"
+                          referrerPolicy="no-referrer"
+                          className="relative z-10 h-full w-full object-contain p-3 drop-shadow-[0_10px_14px_rgba(35,30,26,0.14)] transition-transform duration-300 group-hover:scale-[1.04]"
+                        />
+                      </>
                     ) : (
                       <div className="flex h-full w-full items-center justify-center bg-[#EFE8DE] text-[#8B7F74]">
-                        <Box className="h-8 w-8" aria-hidden="true" />
+                        <Layers className="h-8 w-8" aria-hidden="true" />
                       </div>
                     )}
-                    <span className="absolute top-3 right-3 rounded-lg bg-[#231E1A]/80 px-2 py-0.5 text-xs font-semibold tracking-wide text-white">
-                      3D
-                    </span>
                   </div>
 
                   <div className="flex flex-1 flex-col p-4">
@@ -141,7 +146,7 @@ export const GalleryScreen: React.FC<GalleryScreenProps> = ({
                       {item.title}
                     </h2>
                     <p className="mt-1 text-xs text-[#8B7F74] tabular-nums">
-                      {formatRussianDate(item.createdAt)}
+                      {formatRussianDate(item.createdAt)} · {item.views?.length ?? 9} ракурсов
                     </p>
                     {item.note && (
                       <p className="mt-2 line-clamp-2 text-sm leading-relaxed text-[#5E544C]">

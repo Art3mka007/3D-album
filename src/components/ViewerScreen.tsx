@@ -1,15 +1,22 @@
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   ArrowLeft,
   ChevronDown,
   ChevronUp,
-  Compass,
-  Glasses,
+  Layers,
+  MoveHorizontal,
   Trash2,
 } from 'lucide-react';
-import { ViewerCanvas } from '../three/ViewerCanvas';
-import type { AlbumItem } from '../types/album';
+import type { AlbumItem, CameraPreset } from '../types/album';
 import { formatRussianDate } from '../utils/albumStorage';
+import { ShowcaseStage } from './ShowcaseStage';
+
+const ORBIT_PRESETS: Array<{ id: Exclude<CameraPreset, 'top'>; label: string }> = [
+  { id: 'front', label: 'Спереди' },
+  { id: 'right', label: 'Справа' },
+  { id: 'back', label: 'Сзади' },
+  { id: 'left', label: 'Слева' },
+];
 
 interface ViewerScreenProps {
   item: AlbumItem;
@@ -22,107 +29,107 @@ export const ViewerScreen: React.FC<ViewerScreenProps> = ({
   onBack,
   onDelete,
 }) => {
-  const [gyroEnabled, setGyroEnabled] = useState(false);
-  const [gyroNotice, setGyroNotice] = useState('');
-  const [vrMode, setVrMode] = useState(false);
   const [sheetExpanded, setSheetExpanded] = useState(true);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [requestedPreset, setRequestedPreset] = useState<CameraPreset>('front');
+  const [presetVersion, setPresetVersion] = useState(0);
+  const [activePreset, setActivePreset] = useState<CameraPreset | null>('front');
+  const [topActive, setTopActive] = useState(false);
 
-  const handleToggleGyro = async () => {
-    setGyroNotice('');
-    if (gyroEnabled) {
-      setGyroEnabled(false);
-      return;
-    }
-
-    // Request iOS 13+ DeviceOrientation permission inside user click gesture
-    const DeviceOrientationEvt = window.DeviceOrientationEvent as unknown as {
-      requestPermission?: () => Promise<'granted' | 'denied'>;
-    };
-
-    if (DeviceOrientationEvt && typeof DeviceOrientationEvt.requestPermission === 'function') {
-      try {
-        const res = await DeviceOrientationEvt.requestPermission();
-        if (res !== 'granted') {
-          setGyroNotice('Доступ к гироскопу отклонён');
-          return;
-        }
-      } catch {
-        setGyroNotice('Не удалось активировать гироскоп');
-        return;
-      }
-    } else if (!('DeviceOrientationEvent' in window)) {
-      setGyroNotice('Датчик наклона не обнаружен');
-    }
-
-    setGyroEnabled(true);
+  const handleSelectPreset = (preset: CameraPreset) => {
+    setRequestedPreset(preset);
+    setPresetVersion((v) => v + 1);
   };
+
+  const handleActiveStateChange = useCallback(
+    (state: {
+      topActive: boolean;
+      activeDeg: number;
+      activePreset: CameraPreset | null;
+    }) => {
+      setTopActive(state.topActive);
+      setActivePreset(state.activePreset);
+    },
+    [],
+  );
 
   return (
     <div className="fixed inset-0 z-40 flex flex-col overflow-hidden bg-[#F3EDE4] text-[#231E1A]">
-      {/* 3D Canvas takes full viewport */}
-      <div className="absolute inset-0">
-        <ViewerCanvas item={item} gyroEnabled={gyroEnabled} vrMode={vrMode} />
+      {/* Top Bar */}
+      <header className="relative z-10 flex items-center justify-between gap-2 px-4 pt-4">
+        <button
+          type="button"
+          onClick={onBack}
+          aria-label="Вернуться в альбом"
+          className="flex min-h-[44px] items-center gap-1.5 rounded-2xl bg-white px-3.5 py-2 text-sm font-medium text-[#231E1A] shadow-sm transition-colors hover:bg-[#FAF8F5] whitespace-nowrap shrink-0"
+        >
+          <ArrowLeft className="h-4 w-4 shrink-0" aria-hidden="true" />
+          <span>Назад</span>
+        </button>
+
+        <div className="flex items-center gap-1.5 text-xs font-medium text-[#5E544C] whitespace-nowrap shrink-0">
+          <MoveHorizontal className="h-3.5 w-3.5 text-[#D96B43]" aria-hidden="true" />
+          <span>Свайп для вращения</span>
+        </div>
+      </header>
+
+      {/* Main 2.5D Showcase Stage */}
+      <div className="relative flex min-h-0 flex-1 items-center justify-center px-4 pb-1">
+        <ShowcaseStage
+          item={item}
+          requestedPreset={requestedPreset}
+          presetVersion={presetVersion}
+          onActiveStateChange={handleActiveStateChange}
+        />
       </div>
 
-      {/* VR Split-Screen Overlay */}
-      {vrMode && (
-        <div className="pointer-events-none fixed inset-0 z-20 flex">
-          <div className="relative h-full w-1/2 border-r-2 border-[#231E1A]/80" />
-          <div className="relative h-full w-1/2" />
-          <div className="pointer-events-auto fixed top-4 left-1/2 z-30 -translate-x-1/2">
-            <button
-              type="button"
-              onClick={() => setVrMode(false)}
-              className="flex min-h-[44px] items-center gap-2 rounded-2xl bg-[#231E1A] px-4 py-2 text-sm font-semibold text-white shadow-lg"
-            >
-              <Glasses className="h-4 w-4 text-[#E88A66]" aria-hidden="true" />
-              <span>Выйти из VR</span>
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Top Bar (hidden in VR mode for clean stereo view) */}
-      {!vrMode && (
-        <header className="relative z-10 flex items-center justify-between gap-2 px-4 pt-4">
-          <button
-            type="button"
-            onClick={onBack}
-            aria-label="Вернуться в альбом"
-            className="flex min-h-[44px] items-center gap-1.5 rounded-2xl bg-white px-3.5 py-2 text-sm font-medium text-[#231E1A] shadow-sm transition-colors hover:bg-[#FAF8F5] whitespace-nowrap shrink-0"
+      {/* Bottom dock: [Спереди][Справа][Сзади][Слева] + separate [Сверху] button + collapsible info sheet */}
+      <div className="relative z-10 mt-auto flex flex-col items-center">
+        <div className="mb-2.5 flex max-w-[96vw] items-center gap-2">
+          <nav
+            aria-label="Круговые ракурсы"
+            className="flex items-center gap-1 rounded-2xl bg-white p-1 shadow-sm"
           >
-            <ArrowLeft className="h-4 w-4 shrink-0" aria-hidden="true" />
-            <span>Назад</span>
-          </button>
+            {ORBIT_PRESETS.map((preset) => {
+              const active = !topActive && activePreset === preset.id;
+              return (
+                <button
+                  key={preset.id}
+                  type="button"
+                  onClick={() => handleSelectPreset(preset.id)}
+                  data-testid={`preset-btn-${preset.id}`}
+                  aria-pressed={active}
+                  className={`min-h-[40px] rounded-xl px-2.5 py-1.5 text-xs font-medium transition-colors whitespace-nowrap shrink-0 sm:px-3.5 ${
+                    active
+                      ? 'bg-[#D96B43] text-white'
+                      : 'text-[#5E544C] hover:bg-[#FAF8F5] hover:text-[#231E1A]'
+                  }`}
+                >
+                  {preset.label}
+                </button>
+              );
+            })}
+          </nav>
 
           <button
             type="button"
-            onClick={handleToggleGyro}
-            aria-pressed={gyroEnabled}
-            className={`flex min-h-[44px] items-center gap-2 rounded-2xl px-3.5 py-2 text-sm font-medium shadow-sm transition-colors whitespace-nowrap shrink-0 ${
-              gyroEnabled
-                ? 'bg-[#D96B43] text-white'
+            onClick={() => handleSelectPreset('top')}
+            data-testid="preset-btn-top"
+            aria-pressed={topActive}
+            className={`flex min-h-[48px] items-center gap-1.5 rounded-2xl px-3.5 py-2 text-xs font-semibold shadow-sm transition-colors whitespace-nowrap shrink-0 ${
+              topActive
+                ? 'bg-[#231E1A] text-white'
                 : 'bg-white text-[#231E1A] hover:bg-[#FAF8F5]'
             }`}
           >
-            <Compass className="h-4 w-4 shrink-0" aria-hidden="true" />
-            <span>Гироскоп</span>
+            <Layers className={`h-3.5 w-3.5 shrink-0 ${topActive ? 'text-[#E88A66]' : 'text-[#D96B43]'}`} aria-hidden="true" />
+            <span>Сверху</span>
           </button>
-        </header>
-      )}
-
-      {!vrMode && gyroNotice && (
-        <div className="relative z-10 mx-auto mt-2 rounded-xl bg-white px-3 py-1.5 text-xs font-medium text-[#6E645B] shadow-sm">
-          {gyroNotice}
         </div>
-      )}
 
-      {/* Bottom Sheet (no backdrop-blur over WebGL canvas) */}
-      {!vrMode && (
         <section
           aria-label="Описание вещи"
-          className="relative z-10 mt-auto mx-auto w-full max-w-2xl rounded-t-3xl bg-white px-5 pt-3 pb-6 shadow-[0_-8px_30px_rgba(35,30,26,0.12)]"
+          className="w-full max-w-2xl rounded-t-3xl bg-white px-5 pt-2.5 pb-6 shadow-[0_-8px_30px_rgba(35,30,26,0.12)]"
         >
           <button
             type="button"
@@ -147,7 +154,7 @@ export const ViewerScreen: React.FC<ViewerScreenProps> = ({
                 {item.title}
               </h1>
               <p className="mt-0.5 text-xs text-[#8B7F74] tabular-nums">
-                {formatRussianDate(item.createdAt)} · Вращайте одним пальцем, масштаб двумя
+                {formatRussianDate(item.createdAt)} · {item.views.length} ракурсов · 2.5D-витрина
               </p>
             </div>
           </div>
@@ -159,23 +166,14 @@ export const ViewerScreen: React.FC<ViewerScreenProps> = ({
               )}
 
               {!confirmDelete ? (
-                <div className="flex flex-wrap items-center gap-2.5 pt-1">
-                  <button
-                    type="button"
-                    onClick={() => setVrMode(true)}
-                    className="flex min-h-[44px] flex-1 items-center justify-center gap-2 rounded-2xl bg-[#231E1A] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#3A322C] whitespace-nowrap"
-                  >
-                    <Glasses className="h-4 w-4 text-[#E88A66] shrink-0" aria-hidden="true" />
-                    <span>Режим VR / Cardboard</span>
-                  </button>
-
+                <div className="flex items-center justify-end pt-1">
                   <button
                     type="button"
                     onClick={() => setConfirmDelete(true)}
-                    className="flex min-h-[44px] items-center justify-center gap-2 rounded-2xl border border-[#E6DFD5] bg-[#FAF8F5] px-4 py-2.5 text-sm font-medium text-[#B84A32] transition-colors hover:bg-[#FDF0EC] whitespace-nowrap"
+                    className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-2xl border border-[#E6DFD5] bg-[#FAF8F5] px-4 py-2.5 text-sm font-medium text-[#B84A32] transition-colors hover:bg-[#FDF0EC] whitespace-nowrap sm:w-auto"
                   >
                     <Trash2 className="h-4 w-4 shrink-0" aria-hidden="true" />
-                    <span>Удалить</span>
+                    <span>Удалить из альбома</span>
                   </button>
                 </div>
               ) : (
@@ -208,7 +206,7 @@ export const ViewerScreen: React.FC<ViewerScreenProps> = ({
             </div>
           )}
         </section>
-      )}
+      </div>
     </div>
   );
 };
